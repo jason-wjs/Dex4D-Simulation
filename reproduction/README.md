@@ -401,3 +401,35 @@ table: maximum violation 1.049938 rad; lowered table: 0.004207 rad over the five
 recorded environments and 360 control samples. This removes both hand/table
 contact and object support, so it is a causal counterfactual of the table's
 presence, not a repaired tabletop task or isolated contact-pair experiment.
+
+
+## Teacher learner-state continuation component
+
+PPO now exposes `learner_state_dict()` and `restore_learner_state(state)` for
+an explicit learner section at a completed iteration boundary. It includes
+model/mode, populated Adam state and optimizer groups, adaptive step size,
+next iteration, cumulative step/time counters and Python/NumPy/Torch RNG states.
+CUDA RNG state is captured when CUDA is initialized; that path has not yet been
+validated by this CPU fixture. Partial rollout and mismatched optimization
+recipes are rejected. Run counters now advance after each update even with
+logging disabled. Original `save/load/test` and weight-only CLI semantics stay
+unchanged; these helpers are not a complete native resume command.
+
+The two separate CPU commands below use the full original PointNet teacher and
+actual `PPO.run/update` (8 transitions, 5 optimization epochs, 4 minibatches) with
+four synthetic VecEnv instances. The constructor suppresses W&B; the real
+training branch runs without logging. Both reference and resumed branches call
+`run` with fresh synthetic resets, so this tests the learner and counters only.
+
+```bash
+CUDA_VISIBLE_DEVICES='' .venv-gym/bin/python reproduction/check_teacher_learner_resume.py --phase prepare --output NEW_DIRECTORY
+CUDA_VISIBLE_DEVICES='' .venv-gym/bin/python reproduction/check_teacher_learner_resume.py --phase resume --output NEW_DIRECTORY
+```
+
+Observed exact restore and next-update equality for models, Adam, adaptive LR,
+iteration/timestep counters and all tested RNG states. Iterations 2→3, steps
+64→96, populated Adam steps 40→60. Wall time matches at restore; subsequent
+elapsed time is excluded from equality. Legacy weight-initialization regression
+matches the prior report exactly. Native task state, observation histories,
+rollout-loop state and process restore/continue remain to be integrated and
+validated before claiming complete teacher recovery.

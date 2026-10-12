@@ -4,6 +4,7 @@ import os
 import os.path as osp
 from pickle import FALSE
 import time
+import random
 from turtle import done
 
 from matplotlib.patches import FancyArrow
@@ -134,6 +135,47 @@ class PPO:
 
     def save(self, path):
         torch.save(self.actor_critic.state_dict(), path)
+
+    def _learner_settings(self):
+        settings = {name: getattr(self, name) for name in [
+            'num_transitions_per_env', 'num_learning_epochs', 'num_mini_batches',
+            'clip_param', 'gamma', 'lam', 'value_loss_coef', 'entropy_coef',
+            'max_grad_norm', 'use_clipped_value_loss', 'schedule', 'desired_kl',
+            'asymmetric', 'is_vision']}
+        settings.update(num_envs=self.vec_env.num_envs, sampler=self.storage.sampler,
+                        obs_shape=self.observation_space.shape, state_shape=self.state_space.shape,
+                        action_shape=self.action_space.shape)
+        return settings
+
+    def learner_state_dict(self):
+        """Learner section of an iteration-boundary checkpoint, not task state."""
+        assert self.storage.step == 0, 'Save only after the completed rollout update'
+        return copy.deepcopy({
+            'format': 'dex4d_ppo_learner_v1', 'settings': self._learner_settings(),
+            'model': self.actor_critic.state_dict(), 'optimizer': self.optimizer.state_dict(),
+            'model_training': self.actor_critic.training, 'step_size': self.step_size,
+            'next_iteration': self.current_learning_iteration,
+            'tot_timesteps': self.tot_timesteps, 'tot_time': self.tot_time,
+            'rng': {'python': random.getstate(), 'numpy': np.random.get_state(),
+                    'torch': torch.get_rng_state(),
+                    'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None}})
+
+    def restore_learner_state(self, state):
+        """Restore the learner section; caller must also restore task/rollout state."""
+        assert state['format'] == 'dex4d_ppo_learner_v1'
+        assert self.storage.step == 0, 'Cannot replace a partially collected rollout'
+        assert state['settings'] == self._learner_settings(), 'Training recipe mismatch'
+        self.actor_critic.load_state_dict(state['model'])
+        self.actor_critic.train(state['model_training'])
+        self.optimizer.load_state_dict(state['optimizer'])
+        self.step_size = state['step_size']
+        self.current_learning_iteration = state['next_iteration']
+        self.tot_timesteps, self.tot_time = state['tot_timesteps'], state['tot_time']
+        random.setstate(state['rng']['python'])
+        np.random.set_state(state['rng']['numpy'])
+        torch.set_rng_state(state['rng']['torch'].cpu())
+        if state['rng']['cuda'] is not None:
+            torch.cuda.set_rng_state_all([value.cpu() for value in state['rng']['cuda']])
 
     def run(self, num_learning_iterations, log_interval=1):
         id = -1
@@ -288,6 +330,9 @@ class PPO:
                 self.storage.clear()
                 stop = time.time()
                 learn_time = stop - start
+                self.current_learning_iteration = it + 1
+                self.tot_timesteps += self.num_transitions_per_env * self.vec_env.num_envs
+                self.tot_time += collection_time + learn_time
                 if self.print_log:
                     self.log(locals())
                 if it % log_interval == 0:
@@ -305,8 +350,6 @@ class PPO:
             self.save(os.path.join(self.log_dir, 'model_{}_final.pt'.format(num_learning_iterations)))
 
     def log(self, locs, width=80, pad=35):
-        self.tot_timesteps += self.num_transitions_per_env * self.vec_env.num_envs
-        self.tot_time += locs['collection_time'] + locs['learn_time']
         iteration_time = locs['collection_time'] + locs['learn_time']
 
         ep_string = f''
