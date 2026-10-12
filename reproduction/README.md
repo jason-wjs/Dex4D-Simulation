@@ -282,3 +282,21 @@ states and control-step trajectories are saved. The study's
 `compare_action_replays.py` checks matching initial states, actions, applied
 actions and targets before comparing physical results. This is an isolated
 numerical-sensitivity diagnostic, not a replacement training recipe.
+
+## Simulation-step force diagnostic
+
+For a bounded fixed-action replay, add `"simulation_step_audit": true` to
+`action_replay.json`. This records selected objects' root/body states, net
+contact force and robot joint state after every `simulate(dt)` call, writing
+`simulation_steps.npz` and `simulation_steps.json`. Metadata includes native
+mass, COM, gravity flags, dt, substeps and contact collection mode. Sampling
+includes all internal PhysX substeps per call; it does not expose individual
+internal substeps. CPU copies introduce synchronization and are diagnostic only.
+Omitting the flag preserves ordinary replay and training behavior.
+
+The study repository's `check_force_balance.py` compares recorded velocity
+changes with force-derived impulses without fitting a scale. The current
+native Dex4D traces fail this consistency check; force magnitudes must not be
+reported as validated hardware loads. See the study's force/table report for
+the controlled comparison and interpretation limits.
+

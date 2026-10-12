@@ -154,6 +154,8 @@ class BaseTask():
         for i in range(self.control_freq_inv):
             self.render()
             self.gym.simulate(self.sim)
+            if getattr(self, 'simulation_step_audit', None) is not None:
+                self.simulation_step_audit.capture(self.id, i)
             if getattr(self, "is_bench", False):
                 if getattr(self, "self_record_video", False):
                     self.video_recorder.record_frame()

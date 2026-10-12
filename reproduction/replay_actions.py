@@ -55,6 +55,9 @@ def replay(self, num_learning_iterations, log_interval=1):
         ['robot_dof_pos', 'robot_dof_vel', 'root_state_tensor', 'goal_state', 'cur_targets', 'progress_buf']})
 
     audit = TrajectoryAudit(task, output, ids)
+    if spec.get('simulation_step_audit', False):
+        from simulation_step_audit import SimulationStepAudit
+        task.simulation_step_audit = SimulationStepAudit(task, output, ids)
     source_actions = torch.as_tensor(actions[:steps], device=task.device)
     all_actions = torch.zeros((task.num_envs, task.num_actions), device=task.device)
     for step in range(steps):
@@ -67,6 +70,8 @@ def replay(self, num_learning_iterations, log_interval=1):
         if (step + 1) % 60 == 0:
             print(f'REPLAY_STEP {step + 1}/{steps}', flush=True)
     audit.save()
+    if spec.get('simulation_step_audit', False):
+        task.simulation_step_audit.save()
     native = task.gym.get_sim_params(task.sim)
     summary = {'steps': steps, 'env_ids': ids, 'num_envs': task.num_envs,
                'position_iterations': native.physx.num_position_iterations,
