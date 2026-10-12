@@ -252,3 +252,33 @@ are saved for comparison. Read-only copies synchronize GPU work. These short
 runs do not produce full-split success estimates. The study script
 `experiments/dex4d/compare_initial_state.py FIRST SECOND --output result.json`
 checks matching inputs and reports exact equality and numerical differences.
+
+For the joint-constraint diagnostic, `run_split_eval.py --action-replay` uses
+`reproduction/replay_actions.py` and a prepared output directory containing
+`action_replay.json`:
+
+```json
+{
+  "initial_snapshot": "/absolute/path/to/initial-probe/after_reset.npz",
+  "action_archive": "/absolute/path/to/trajectory-audit/trajectory_audit.npz",
+  "steps": 360
+}
+```
+
+Keep the original full split and case order. The probe installs the recorded
+joint positions/velocities, root states, goals, targets and progress into a
+fresh simulator before any integration. It replays the selected environments'
+recorded actions through the original clipping, target filtering and physics
+step code; all other environments receive zero actions. Goals are held fixed
+and the finite sequence must end before the first episode reset. No network
+inference or success-rate evaluation occurs. Contact caches are not restored,
+so this does not claim to reproduce the original closed-loop trajectory exactly.
+
+The study comparison changes only `sim.physx.num_position_iterations` from 8
+to 32 in separate prepared configs and uses identical replay input paths.
+Use `--max-seconds 420`; the runner retains its idle-GPU check and interference
+monitor. Native simulator parameters, source/input hashes, requested initial
+states and control-step trajectories are saved. The study's
+`compare_action_replays.py` checks matching initial states, actions, applied
+actions and targets before comparing physical results. This is an isolated
+numerical-sensitivity diagnostic, not a replacement training recipe.
