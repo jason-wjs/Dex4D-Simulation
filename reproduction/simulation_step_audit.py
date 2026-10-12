@@ -11,7 +11,7 @@ class SimulationStepAudit:
         self.task, self.output = task, output
         self.ids = torch.tensor(env_ids, dtype=torch.long, device=task.device)
         self.force = gymtorch.wrap_tensor(task.gym.acquire_net_contact_force_tensor(task.sim)).view(task.num_envs, -1, 3)
-        props, body_indices = [], []
+        props, body_indices, global_body_indices, sensor_indices = [], [], [], []
         for env_id in env_ids:
             env = task.envs[env_id]
             actor = task.gym.find_actor_handle(env, 'object')
@@ -20,14 +20,27 @@ class SimulationStepAudit:
             body = bodies[0]
             props.append({'mass': body.mass, 'com': [getattr(body.com, a) for a in 'xyz'], 'flags': int(body.flags)})
             body_indices.append(task.gym.get_actor_rigid_body_index(env, actor, 0, gymapi.DOMAIN_ENV))
+            global_index = task.gym.get_actor_rigid_body_index(env, actor, 0, gymapi.DOMAIN_SIM)
+            assert global_index == env_id * self.force.shape[1] + body_indices[-1]
+            global_body_indices.append(global_index)
+            if task.object_force_sensor_audit:
+                assert task.gym.get_actor_force_sensor_count(env, actor) == 1
+                sensor_indices.append(task.gym.get_actor_force_sensor(env, actor, 0).get_global_index())
+        if task.object_force_sensor_audit:
+            self.sensors = gymtorch.wrap_tensor(task.gym.acquire_force_sensor_tensor(task.sim)).view(-1, 6)
+            self.sensor_ids = torch.tensor(sensor_indices, dtype=torch.long, device=task.device)
         self.body_ids = torch.tensor(body_indices, dtype=torch.long, device=task.device)
         native = task.gym.get_sim_params(task.sim)
         self.meta = {'env_ids': env_ids, 'object_properties': props,
+                     'object_body_indices_env': body_indices,
+                     'object_body_indices_sim': global_body_indices,
                      'gravity_disabled_flag': int(gymapi.RIGID_BODY_DISABLE_GRAVITY),
                      'gravity': [getattr(native.gravity, a) for a in 'xyz'],
                      'dt': native.dt, 'substeps': native.substeps,
                      'contact_collection': int(native.physx.contact_collection),
                      'control_frequency_inv': task.control_freq_inv,
+                     'object_constraint_sensor_indices': sensor_indices,
+                     'object_constraint_sensor_frame': 'world; forward dynamics disabled, constraint solver enabled' if sensor_indices else None,
                      'initial_object_state': task.root_state_tensor[task.object_indices[self.ids]].detach().cpu().tolist(),
                      'scope': 'After every native simulate(dt), including all configured internal substeps. Tensor refreshes and CPU copies add synchronization. Not an internal PhysX substep/contact-pair trace.'}
         self.frames = []
@@ -42,6 +55,9 @@ class SimulationStepAudit:
                   'object_body_state': t.rigid_body_states[self.ids, self.body_ids],
                   'object_net_force': self.force[self.ids, self.body_ids],
                   'joint_pos': t.robot_dof_pos[self.ids], 'joint_vel': t.robot_dof_vel[self.ids]}
+        if t.object_force_sensor_audit:
+            t.gym.refresh_force_sensor_tensor(t.sim)
+            values['object_constraint_sensor'] = self.sensors[self.sensor_ids]
         row = {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
         row['policy_step'] = np.asarray(policy_step + 1)
         row['simulation_step_in_control'] = np.asarray(simulation_step + 1)

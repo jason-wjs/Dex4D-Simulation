@@ -346,3 +346,34 @@ Outputs `report.json` and `trace.npz` retain source/config hashes, all 60 steps
 and explicit acceptance checks. This validates simple-scene readout under the
 original 8-position-iteration setting; it does not validate force magnitudes
 in the full hand/object scene or its separate 32-iteration diagnostic.
+
+
+## Independent force readout in the actual replay scene
+
+Set `env.objectForceSensorAudit: true` only in a prepared test YAML, together
+with the existing `simulation_step_audit` replay flag. This adds one world-frame,
+constraint-only sensor to each physical object (not its goal). All original
+fingertip sensor indices are checked against native handles; the original
+24-component fingertip observation remains a refreshed tensor view. Training
+and ordinary evaluation omit the option and keep the original layout.
+
+The per-simulation-step recorder resolves selected object sensors using native
+global sensor indices and verifies each object's DOMAIN_SIM rigid-body index
+against its environment tensor view. It saves the object six-axis sensor values
+alongside net-contact force and root/body velocity. This tests independent
+readouts within the same trajectory, not exact trajectory equivalence after
+adding instrumentation. The study force analyzer reports both impulse residuals.
+
+The first 120-step actual-scene replay completed with 1,440 samples and showed
+large differences between the two force APIs. For the microscope, sensor impulse
+RMS was 0.005075 N s versus momentum 0.004919 N s; net-contact tensor impulse RMS
+was 183.150650 N s. Sensor residuals are nonzero, particularly during transients;
+no exact force calibration, SDK root cause or physical-quality pass is claimed.
+See the study force/table report for evidence, index checks and next decision.
+
+The 120-step repeat with explicit native global-body-index assertions passes.
+Both runs have bitwise-equal recorded object and joint states and independent
+sensor arrays, but differing net-contact force tensors (maximum component
+difference 20,438.53125). All selected object indices match the 34-body per-env
+view. This establishes unreliable contact-tensor magnitudes in this scene,
+not a specific SDK mechanism. Joint-limit/contact geometry repair remains open.

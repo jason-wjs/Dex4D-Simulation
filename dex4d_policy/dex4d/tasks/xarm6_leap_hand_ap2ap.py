@@ -113,6 +113,9 @@ class XArm6LeapHandAP2AP(BaseTask):
             "goal_object": 4,
         }
         self.table_dims = gymapi.Vec3(1.2, 1.2, 0.6)
+        self.object_force_sensor_audit = self.cfg['env'].get('objectForceSensorAudit', False)
+        if self.object_force_sensor_audit:
+            assert self.cfg['test'], 'Object force sensor is a test-only diagnostic'
 
         super().__init__(cfg=self.cfg, enable_camera_sensors=enable_camera_sensors)
 
@@ -129,7 +132,19 @@ class XArm6LeapHandAP2AP(BaseTask):
 
         if "full_state" in self.obs_type or self.asymmetric_obs:
             force_sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
-            self.force_sensor_tensor = gymtorch.wrap_tensor(force_sensor_tensor).view(self.num_envs, self.num_fingertips * 6)
+            if self.object_force_sensor_audit:
+                # Keep a view: a copy here would stop reflecting refreshed sensor data.
+                sensors_per_env = self.num_fingertips + 1
+                for i, env in enumerate(self.envs):
+                    actor = self.gym.find_actor_handle(env, 'robot')
+                    assert self.gym.get_actor_force_sensor_count(env, actor) == self.num_fingertips
+                    indices = [self.gym.get_actor_force_sensor(env, actor, j).get_global_index()
+                               for j in range(self.num_fingertips)]
+                    assert indices == [i * sensors_per_env + j for j in range(self.num_fingertips)]
+                self.force_sensor_tensor = gymtorch.wrap_tensor(force_sensor_tensor).view(
+                    self.num_envs, sensors_per_env * 6)[:, :self.num_fingertips * 6]
+            else:
+                self.force_sensor_tensor = gymtorch.wrap_tensor(force_sensor_tensor).view(self.num_envs, self.num_fingertips * 6)
 
             dof_force_tensor = self.gym.acquire_dof_force_tensor(self.sim)
             self.dof_force_tensor = gymtorch.wrap_tensor(dof_force_tensor).view(self.num_envs,
@@ -517,6 +532,14 @@ class XArm6LeapHandAP2AP(BaseTask):
                     scaled_object_asset_file = object_code + f"/coacd/coacd_{scale_str}.urdf"
                     scaled_object_asset = self.gym.load_asset(self.sim, mesh_path, scaled_object_asset_file,
                                                               object_asset_options)
+                    if self.object_force_sensor_audit:
+                        assert self.gym.get_asset_rigid_body_count(scaled_object_asset) == 1
+                        sensor_props = gymapi.ForceSensorProperties()
+                        sensor_props.enable_forward_dynamics_forces = False
+                        sensor_props.enable_constraint_solver_forces = True
+                        sensor_props.use_world_frame = True
+                        assert self.gym.create_asset_force_sensor(
+                            scaled_object_asset, 0, gymapi.Transform(), sensor_props) == 0
                     scaled_goal_asset = self.gym.load_asset(self.sim, mesh_path, scaled_object_asset_file,
                                                             goal_asset_options)
                     if obj_id not in object_asset_dict:
