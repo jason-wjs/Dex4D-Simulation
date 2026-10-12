@@ -8,6 +8,20 @@ from pathlib import Path
 import yaml
 
 
+def split_pairs(root, split):
+    path = root / "dex4d_policy/dex4d/cfg" / (split + ".yaml")
+    text = path.read_text()
+    if split == "train_set":
+        document = yaml.compose(text)
+        mapping = next(value for key, value in document.value if key.value == "object_code_dict")
+    else:
+        # The shipped test lists are mapping fragments, not task config files.
+        mapping = yaml.compose("{" + text + "}")
+    # Preserve repeated mesh keys, as upstream MergeLoader does.
+    pairs = [(key.value, float(scale.value)) for key, values in mapping.value for scale in values.value]
+    return path, pairs
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -16,18 +30,7 @@ def main():
     assets = root / "dex4d_policy/assets"
     reports = {}
     for split in ("train_set", "test_set_seen_cat", "test_set_unseen_cat"):
-        path = root / "dex4d_policy/dex4d/cfg" / (split + ".yaml")
-        text = path.read_text()
-        if split == "train_set":
-            document = yaml.compose(text)
-            mapping = next(value for key, value in document.value if key.value == "object_code_dict")
-        else:
-            # The two shipped test files are comma-separated mapping fragments,
-            # without the enclosing braces or object_code_dict key.
-            mapping = yaml.compose("{" + text + "}")
-        # yaml.safe_load would overwrite repeated mesh keys. The author's
-        # MergeLoader concatenates their scale lists; retain every entry here.
-        pairs = [(key.value, float(scale.value)) for key, values in mapping.value for scale in values.value]
+        path, pairs = split_pairs(root, split)
         missing = []
         for code, scale in pairs:
             tag = f"{round(scale * 100):03d}"
