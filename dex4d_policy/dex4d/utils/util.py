@@ -5,6 +5,7 @@ from isaacgym import gymutil, gymapi
 from isaacgym.torch_utils import *
 import shutil, os
 import trimesh
+import yaml
 
 def check(input):
     if type(input) == np.ndarray:
@@ -107,24 +108,24 @@ def visualize_axes_isaacgym(env, env_poses, axis_length=0.1, selected_ids=None):
 def copy_files(args, logdir):
     if not os.path.exists(logdir):
         os.makedirs(logdir, exist_ok=True)
-    shutil.copy2("cfg/my_train_set.yaml", logdir)
+    shutil.copy2(args.cfg_env, os.path.join(logdir, 'env.yaml'))
+    shutil.copy2(args.cfg_train, os.path.join(logdir, 'train.yaml'))
+    with open(args.cfg_env) as stream:
+        env_cfg = yaml.safe_load(stream)['env']
+    if 'object_code_dict_file' in env_cfg:
+        shutil.copy2(env_cfg['object_code_dict_file'], logdir)
     shutil.copy2("utils/process_sarl.py", logdir)
 
     if args.task == "XArm6LeapHandAP2AP":
         shutil.copy2("algorithms/rl/ppo/ppo.py", logdir)
         shutil.copy2("algorithms/rl/ppo/module.py", logdir)
-        shutil.copy2("script/run_train_ppo_state.sh", logdir)
         shutil.copy2("tasks/xarm6_leap_hand_ap2ap.py", logdir)
-        shutil.copy2("cfg/xarm6_leap_hand_ap2ap.yaml", logdir)
-        shutil.copy2("cfg/ppo/config.yaml", logdir)
     elif args.task == "XArm6LeapHandAP2APVision":
         shutil.copy2("algorithms/rl/dagger/dagger.py", logdir)
         shutil.copy2("algorithms/rl/dagger/module.py", logdir)
         shutil.copy2("script/run_train_dagger.sh", logdir)
         shutil.copy2("tasks/xarm6_leap_hand_ap2ap.py", logdir)
         shutil.copy2("tasks/xarm6_leap_hand_ap2ap_vision.py", logdir)
-        shutil.copy2("cfg/xarm6_leap_hand_ap2ap_vision.yaml", logdir)
-        shutil.copy2("cfg/dagger/config.yaml", logdir)
 
 def sample_position(pos, dis_range):
     '''

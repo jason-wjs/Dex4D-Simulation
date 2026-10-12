@@ -413,7 +413,7 @@ CUDA RNG state is captured when CUDA is initialized; that path has not yet been
 validated by this CPU fixture. Partial rollout and mismatched optimization
 recipes are rejected. Run counters now advance after each update even with
 logging disabled. Original `save/load/test` and weight-only CLI semantics stay
-unchanged; these helpers are not a complete native resume command.
+unchanged. The native integration below now uses these learner helpers.
 
 The two separate CPU commands below use the full original PointNet teacher and
 actual `PPO.run/update` (8 transitions, 5 optimization epochs, 4 minibatches) with
@@ -430,6 +430,48 @@ Observed exact restore and next-update equality for models, Adam, adaptive LR,
 iteration/timestep counters and all tested RNG states. Iterations 2→3, steps
 64→96, populated Adam steps 40→60. Wall time matches at restore; subsequent
 elapsed time is excluded from equality. Legacy weight-initialization regression
-matches the prior report exactly. Native task state, observation histories,
-rollout-loop state and process restore/continue remain to be integrated and
-validated before claiming complete teacher recovery.
+matches the prior report exactly. This CPU fixture alone does not validate
+native task restoration; that is covered by the separate test below.
+
+## Native teacher continuation
+
+The original non-vision, position-driven AP2AP teacher now supports explicit
+`--save_training_state` and `--training_state PATH`. The former saves
+`training_state_latest.pt` atomically at ordinary save intervals and the final
+iteration. The latter restores task/physical state, history, goals, DR parameters
+and schedules, learner/RNG and loop accumulators, then starts the next rollout
+without resetting. Use the same environment/training recipe and a larger total
+`--max_iterations`. Original `--model_dir` remains weights-only stage
+initialization and cannot be combined with `--training_state`.
+
+Only the original teacher recipe is supported: no vision, OSC or `goal_cond`.
+Gym does not expose hidden PhysX contact/solver caches. Future trajectories are
+not promised to match an uninterrupted process bit for bit.
+
+From the repository root, on an idle GPU with the existing Gym environment:
+
+```bash
+.venv-gym/bin/python reproduction/run_teacher_resume_probe.py --gpu 0 --output NEW_RUN
+.venv-gym/bin/python reproduction/verify_teacher_resume.py NEW_RUN/fresh NEW_RUN/resumed
+```
+
+The driver limits each process to 420 seconds and stops if another GPU process
+appears. It uses 16 environments/four object entries and the full original
+teacher/PPO. A diagnostic logical-frame offset of 30000 exercises nonzero DR
+without long training; production `train.py` does not apply that offset.
+`--source-run PRIOR_RUN` reuses its completed two-iteration checkpoint for a
+restore-only diagnostic, checking identical prepared configs.
+
+The executed separate-process fixture passes 2→3 iterations, 256→384 transitions
+and all populated Adam steps 40→60. Model/optimizer tensors stay finite and
+weights change. Task/history/DR/learner/CUDA RNG/loop fields restore exactly;
+native joint/root reads differ by zero. First-rollout checks confirm no reset.
+Mass, friction, DOF properties and gravity are exact. Inertia has relative
+Frobenius error 3.0943e-7; an independent native unchanged get/set/get control
+(`check_inertia_roundtrip.py`, same CLI arguments as `train.py`) measures
+3.1527e-7. Only inertia permits four float32 epsilons (4.7684e-7); raw exact
+equality remains reported as false. This is a bounded recovery check, not
+convergence, full-scale throughput or physical-quality acceptance.
+
+Training startup also now archives the selected environment/train/object-list
+configs instead of attempting to copy missing hardcoded author files.

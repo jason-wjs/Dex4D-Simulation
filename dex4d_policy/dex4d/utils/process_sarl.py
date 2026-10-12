@@ -43,6 +43,13 @@ def process_ppo(args, env, cfg_train, logdir):
     if not is_testing:
         copy_files(args, logdir)
 
+    ppo.save_training_checkpoints = args.save_training_state or bool(args.training_state)
+    if ppo.save_training_checkpoints:
+        assert not is_testing and not is_vision
+    if args.training_state:
+        assert args.model_dir == '', 'Choose either stage weight initialization or training-state resume'
+        ppo.load_training_checkpoint(args.training_state)
+
     if is_testing and args.model_dir != "":
         print("Loading model from {}".format(chkpt_path))
         ppo.test(chkpt_path)

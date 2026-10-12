@@ -93,6 +93,7 @@ class BaseTask():
 
         self.last_step = -1
         self.last_rand_step = -1
+        self.checkpoint_frame_offset = 0
 
         # create envs, sim and viewer
         self.create_sim()
@@ -252,7 +253,7 @@ class BaseTask():
         #   - non-environment parameters when > frequency steps have passed since the last non-environment
         #   - physical environments in the reset buffer, which have exceeded the randomization frequency threshold
         #   - on the first call, randomize everything
-        self.last_step = self.gym.get_frame_count(self.sim)
+        self.last_step = self.gym.get_frame_count(self.sim) + self.checkpoint_frame_offset
         if self.first_randomization:
             do_nonenv_randomize = True
             env_ids = list(range(self.num_envs))

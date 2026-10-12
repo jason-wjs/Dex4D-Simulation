@@ -117,6 +117,8 @@ class PPO:
         self.current_learning_iteration = 0
 
         self.apply_reset = apply_reset
+        self.save_training_checkpoints = False
+        self._pending_training_loop = None
 
         
 
@@ -177,12 +179,39 @@ class PPO:
         if state['rng']['cuda'] is not None:
             torch.cuda.set_rng_state_all([value.cpu() for value in state['rng']['cuda']])
 
+    def save_training_checkpoint(self, path, loop):
+        from tasks.ap2ap_checkpoint import capture
+        assert not self.is_testing and not self.apply_reset
+        task = capture(self.vec_env.task)
+        payload = {'format': 'dex4d_teacher_training_v1', 'task': task,
+                   'learner': self.learner_state_dict(), 'loop': loop}
+        temporary = path + '.tmp'
+        torch.save(payload, temporary)
+        os.replace(temporary, path)
+
+    def load_training_checkpoint(self, path):
+        from tasks.ap2ap_checkpoint import restore
+        assert not self.is_testing and not self.apply_reset
+        payload = torch.load(path, map_location='cpu')
+        assert payload['format'] == 'dex4d_teacher_training_v1'
+        restore(self.vec_env.task, payload['task'])
+        self.restore_learner_state(payload['learner'])
+        self._pending_training_loop = payload['loop']
+
     def run(self, num_learning_iterations, log_interval=1):
         id = -1
         if self.is_testing:
             self.vec_env.task.random_time = False
-        current_obs = self.vec_env.reset()
-        current_states = self.vec_env.get_state()
+        resumed = self._pending_training_loop
+        self._pending_training_loop = None
+        if resumed is None:
+            current_obs = self.vec_env.reset()
+            current_states = self.vec_env.get_state()
+        else:
+            assert not self.is_testing and self.current_learning_iteration < num_learning_iterations
+            current_obs = resumed['current_obs'].to(self.device)
+            current_states = resumed['current_states'].to(self.device)
+            id = resumed['id']
 
         if self.is_testing:
             self.vec_env.task.iteration = self.current_learning_iteration
@@ -276,6 +305,12 @@ class PPO:
             episode_length = []
 
             best_current_successes = 0.0
+            if resumed is not None:
+                rewbuffer, lenbuffer = deque(resumed['rewbuffer'], maxlen=100), deque(resumed['lenbuffer'], maxlen=100)
+                cur_reward_sum = resumed['cur_reward_sum'].to(self.device)
+                cur_episode_length = resumed['cur_episode_length'].to(self.device)
+                reward_sum, episode_length = resumed['reward_sum'], resumed['episode_length']
+                best_current_successes = resumed['best_current_successes']
 
             for it in range(self.current_learning_iteration, num_learning_iterations):
                 start = time.time()
@@ -347,6 +382,13 @@ class PPO:
                         self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
 
                 ep_infos.clear()
+                if self.save_training_checkpoints and (it % log_interval == 0 or it + 1 == num_learning_iterations):
+                    loop = {'id': id, 'current_obs': current_obs, 'current_states': current_states,
+                            'rewbuffer': list(rewbuffer), 'lenbuffer': list(lenbuffer),
+                            'cur_reward_sum': cur_reward_sum, 'cur_episode_length': cur_episode_length,
+                            'reward_sum': reward_sum, 'episode_length': episode_length,
+                            'best_current_successes': float(best_current_successes)}
+                    self.save_training_checkpoint(os.path.join(self.log_dir, 'training_state_latest.pt'), loop)
             self.save(os.path.join(self.log_dir, 'model_{}_final.pt'.format(num_learning_iterations)))
 
     def log(self, locs, width=80, pad=35):
