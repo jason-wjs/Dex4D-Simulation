@@ -5,7 +5,6 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 from unittest import TextTestRunner
-import xxlimited
 from matplotlib.pyplot import axis
 import numpy as np
 import os
