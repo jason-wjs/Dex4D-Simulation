@@ -238,3 +238,17 @@ using source URDF joint transforms plus recorded parent/child link rotations.
 Source-mesh intersection is distinct from PhysX's cooked collision hulls and
 signed contact separation. A high task score alone is not a physical-quality
 pass. Keep recorded runs separate from unrecorded evaluations.
+
+For initialization repeatability, prepare two fresh full-split directories and
+run each with the same runner plus `--initial-state-probe --max-seconds 180`.
+This invokes `reproduction/check_initial_state.py`, which retains original
+scene/checkpoint setup but replaces PPO's long run with the original reset,
+curriculum update and three policy steps. It records construction, the requested
+reset state after original setters and before simulation, and pre/post-action
+snapshots. The reset itself advances twelve simulation steps in stage3.
+Native object masses, centers of mass, inertias and shape counts are recorded;
+Python/NumPy/Torch RNG states, keypoints, observations and native state tensors
+are saved for comparison. Read-only copies synchronize GPU work. These short
+runs do not produce full-split success estimates. The study script
+`experiments/dex4d/compare_initial_state.py FIRST SECOND --output result.json`
+checks matching inputs and reports exact equality and numerical differences.

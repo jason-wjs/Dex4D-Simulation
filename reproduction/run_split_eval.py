@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True, help='Directory from prepare_split_eval.py')
     parser.add_argument('--gpu', type=int, required=True)
     parser.add_argument('--max-seconds', type=int, default=1200)
+    parser.add_argument('--initial-state-probe', action='store_true', help='Record reset and three policy steps instead of full evaluation')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
@@ -35,11 +36,14 @@ def main():
                '--num_envs', str(requested['entries']), '--vis_env_id', '0',
                '--model_dir', str(output / checkpoint.name), '--cfg_env', str(output / 'env.yaml'),
                '--cfg_train', 'cfg/ppo/config_stage_3.yaml']
+    if args.initial_state_probe:
+        command[1] = str(root / 'reproduction/check_initial_state.py')
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(args.gpu), OMP_NUM_THREADS='4', MAX_JOBS='2', PYTHONUNBUFFERED='1')
     env['PATH'] = str(root / '.venv-gym/bin') + ':' + env['PATH']
     env['LD_LIBRARY_PATH'] = str(root / '.python/cpython-3.8.20-linux-x86_64-gnu/lib')
     manifest = {'command': command, 'cwd': str(root / 'dex4d_policy/dex4d'), 'gpu': args.gpu,
                 'max_seconds': args.max_seconds, 'split': requested['split'], 'status': 'starting',
+                'initial_state_probe': args.initial_state_probe,
                 'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
                 'source_patch': subprocess.check_output(['git', 'diff'], cwd=root, text=True),
                 'gpu_identity': subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-gpu=name,uuid', '--format=csv,noheader'], text=True).strip(),
@@ -78,6 +82,16 @@ def main():
         raise SystemExit(f'Incomplete evaluation: {manifest["status"]}, exit {process.returncode}')
     actual = json.loads((output / 'evaluation_cases.json').read_text())
     assert actual == expected, 'Actual case coverage mismatch'
+    if args.initial_state_probe:
+        summary = json.loads((output / 'initial_state_summary.json').read_text())
+        assert summary['num_envs'] == len(expected)
+        assert [s['name'] for s in summary['stages']] == ['constructed', 'reset_pre_physics', 'after_reset', 'before_first_action'] + [
+            name for i in range(3) for name in [f'before_step_{i}', f'after_step_{i}']]
+        assert all(all(s['finite'].values()) for s in summary['stages'])
+        manifest.update(status='completed', verified_entries=len(actual), diagnostic_summary=summary)
+        manifest_path.write_text(json.dumps(manifest, indent=2, allow_nan=False) + '\n')
+        print(json.dumps({'status': 'completed', 'diagnostic': 'initial_state_probe', 'wall_seconds': manifest['wall_seconds']}), flush=True)
+        return
     rollouts = json.loads((output / 'evaluation_rollouts.json').read_text())
     assert len(rollouts) == 2 and [r['policy_step'] for r in rollouts] == [399, 799]
     for row in rollouts:
