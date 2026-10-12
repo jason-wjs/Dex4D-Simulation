@@ -505,3 +505,33 @@ is read-only; the author's initial reset/curriculum order is preserved. A
 stage-1/2 checkpoint (30 Hz, early curriculum) must not be compared directly
 against released stage 3 (5 Hz, later curriculum) as a learning-performance
 comparison. The small three-iteration fixture validates the pipeline only.
+
+## Isolate hand/table contact while keeping object support
+
+The fixed-action replay accepts the diagnostic-only JSON field
+`disable_hand_table_contact_for_audit`. Prepare two otherwise identical replay
+directories with this field false/true and `lower_table_for_audit: false`.
+Both record native shape properties in `hand_table_filter.json`. The true branch
+assigns a distinct bit to each of the 17 collision-bearing hand rigid bodies and
+sets the table mask to their union. The original zero object/arm masks remain;
+distinct-body self and hand/object filter eligibility is preserved. Each run
+asserts the complete shape-pair change set and exact nonfilter property readback.
+Normal task training/evaluation never applies this intervention.
+
+Before using it, the native `check_table_filter.py --output NEW_CALIBRATION`
+control tests the same post-prepare setter timing with GPU PhysX. Two distinct
+mask boxes pass through the table but still stack on one another; a mask-zero
+object retains table support. This checks actual behavior as well as readback.
+
+```bash
+.venv-gym/bin/python reproduction/run_split_eval.py --output REFERENCE --gpu 0 --action-replay --max-seconds 420
+.venv-gym/bin/python reproduction/run_split_eval.py --output FILTERED --gpu 1 --action-replay --max-seconds 420
+.venv-gym/bin/python ../dex-grasp-study/experiments/dex4d/compare_hand_table_filters.py REFERENCE FILTERED --output REPORT.json
+```
+
+Executed paired 360-step replay: maximum selected joint violation 0.622207→
+0.057838 rad; all >0.1-rad selected samples disappear. Object roots remain above
+0.61 m in both runs, unlike the previous whole-table lowering experiment.
+Inputs, targets, native DOF properties, nonfilter shape properties and table
+poses are verified. This isolates a contributor to the driven-contact problem;
+allowing hands through the table is not a valid repair or a success benchmark.

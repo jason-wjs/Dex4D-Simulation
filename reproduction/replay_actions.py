@@ -35,6 +35,9 @@ def replay(self, num_learning_iterations, log_interval=1):
     task.random_time = False
     task.iteration = self.current_learning_iteration
     task.update_curriculum()
+    if 'disable_hand_table_contact_for_audit' in spec:
+        from hand_table_filter import apply
+        apply(task, output, spec['disable_hand_table_contact_for_audit'])
 
     # Install a common measured post-reset state into a fresh scene. Simulator
     # contact caches are not serialized; neither condition performs warm-up.
@@ -79,6 +82,7 @@ def replay(self, num_learning_iterations, log_interval=1):
         task.simulation_step_audit.save()
     native = task.gym.get_sim_params(task.sim)
     summary = {'steps': steps, 'env_ids': ids, 'num_envs': task.num_envs,
+               'hand_table_contact_disabled': spec.get('disable_hand_table_contact_for_audit', False),
                'table_z_offset_m': -1.0 if lower_table else 0.0,
                'table_actor_indices': task.table_indices.detach().cpu().tolist(),
                'position_iterations': native.physx.num_position_iterations,
