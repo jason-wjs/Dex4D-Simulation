@@ -377,3 +377,27 @@ sensor arrays, but differing net-contact force tensors (maximum component
 difference 20,438.53125). All selected object indices match the 34-body per-env
 view. This establishes unreliable contact-tensor magnitudes in this scene,
 not a specific SDK mechanism. Joint-limit/contact geometry repair remains open.
+
+
+## Table-contact counterfactual
+
+The bounded fixed-action replay accepts `lower_table_for_audit: true` in its
+`action_replay.json`. After installing the common initial state, it lowers all
+fixed tables by exactly 1 m via the native root-state setter, before any physics
+step. The robot/object initial states, drive targets, actions, ground and original
+solver settings remain unchanged. Omitting the flag or using false retains the
+original table position. This option lives only in the diagnostic replay entry.
+
+Use fresh paired prepared directories with identical configs and 360 recorded
+actions, differing only in this replay flag, with `--action-replay --max-seconds
+420`. Summary metadata retains the table actor indices and requested offset;
+`replay_initial.npz` records the installed state. The study's
+`compare_table_replays.py TABLE_RUN LOWERED_RUN --output REPORT.json` checks the
+unique initial-state difference, exact actions/targets and native fixed-table
+pose in every recorded sample before reporting joint-limit violations.
+
+The 2026-10-13 paired test completed on idle tele_dewei H100 GPUs 0/1. Original
+table: maximum violation 1.049938 rad; lowered table: 0.004207 rad over the five
+recorded environments and 360 control samples. This removes both hand/table
+contact and object support, so it is a causal counterfactual of the table's
+presence, not a repaired tabletop task or isolated contact-pair experiment.

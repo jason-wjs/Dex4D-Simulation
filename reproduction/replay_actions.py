@@ -43,6 +43,11 @@ def replay(self, num_learning_iterations, log_interval=1):
         value = torch.as_tensor(initial[name], device=task.device, dtype=target.dtype)
         assert target.shape == value.shape and torch.isfinite(value).all()
         target.copy_(value)
+    # Counterfactual contact diagnostic only: keep robot/object initial states
+    # and drives, but move the fixed table below the ground plane.
+    lower_table = spec.get('lower_table_for_audit', False)
+    if lower_table:
+        task.root_state_tensor[task.table_indices, 2] -= 1.0
     task.prev_targets.copy_(task.cur_targets)
     task.last_robot_dof_vel.copy_(task.robot_dof_vel)
     task.reset_buf.zero_()
@@ -74,6 +79,8 @@ def replay(self, num_learning_iterations, log_interval=1):
         task.simulation_step_audit.save()
     native = task.gym.get_sim_params(task.sim)
     summary = {'steps': steps, 'env_ids': ids, 'num_envs': task.num_envs,
+               'table_z_offset_m': -1.0 if lower_table else 0.0,
+               'table_actor_indices': task.table_indices.detach().cpu().tolist(),
                'position_iterations': native.physx.num_position_iterations,
                'velocity_iterations': native.physx.num_velocity_iterations,
                'dt': native.dt, 'substeps': native.substeps,
