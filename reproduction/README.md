@@ -152,3 +152,18 @@ Targeted memory regression passed: original capacity 179 reports one aggregate
 invalid-write context; repaired capacity 193 reports none and exits normally.
 Other CPython/CUDA Valgrind reports remain, so this is not a globally clean
 memory-check claim. The rounding leaves already-conforming capacities unchanged.
+
+## Actual evaluation coverage
+
+Test invocations now save `evaluation_cases.json` beside the supplied checkpoint,
+in environment order, directly from the instantiated task's object/scale list.
+Use a distinct checkpoint output directory per evaluation so the manifest and
+the author's append-only metrics remain attributable to that run.
+
+The original test filter retains only the first scale for each selected mesh.
+Additionally, its scene assignment uses `int(i / num_envs * num_objects)`;
+with 50 environments and 50 selected meshes, floating-point rounding maps
+environment 29 to object 28. The observed manifest therefore has 50 entries but
+49 unique pairs, including `core/mug-962883677a586bd84a60c1a189046dd1` / `010`
+twice (environments 28 and 29). This branch records that original behavior;
+it does not silently change the mapping or claim complete split coverage.

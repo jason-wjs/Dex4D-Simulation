@@ -6,6 +6,8 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from ast import arg
+import json
+from pathlib import Path
 import numpy as np
 import random
 
@@ -20,6 +22,11 @@ def train():
 
     if args.algo in ["ppo", "dagger"]:
         task, env = parse_task(args, cfg, cfg_train, sim_params, agent_index)
+
+        if args.test:
+            # Record the cases actually instantiated after test-time filtering.
+            case_path = Path(args.model_dir).parent / "evaluation_cases.json"
+            case_path.write_text(json.dumps(task.object_code_and_scale_str_for_envs, indent=2) + "\n")
 
         sarl = eval('process_{}'.format(args.algo))(args, env, cfg_train, logdir)
 
