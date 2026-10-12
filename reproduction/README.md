@@ -324,3 +324,25 @@ directory through `LD_LIBRARY_PATH` and import Isaac Gym before torch as the
 script does. Use `CUDA_VISIBLE_DEVICES=''` to keep the check CPU-only.
 Full learner/task/RNG continuation remains a prerequisite for interrupted
 teacher training; do not relabel a stage warm start as such a continuation.
+
+
+## Independent force-sensor calibration
+
+`check_force_sensor.py --output NEW_DIRECTORY` runs 60 native GPU steps with
+two free 1 kg boxes: one supported by the ground and one airborne. It reads
+the original stage-3 PhysX settings, uses dt=1/60, two substeps and
+CC_ALL_SUBSTEPS, and compares the contact tensor with a world-frame force
+sensor configured for constraint forces only. Sensor indices come from the
+native actor sensor API. No hand, mesh, policy or task code is involved.
+
+Run with the Gym venv's `bin` on PATH (Ninja is needed) and its standalone
+Python library directory on LD_LIBRARY_PATH, on an idle CUDA_VISIBLE_DEVICES
+under a finite timeout. On tele_dewei GPU1 the 90-second bounded invocation
+completed and both support readings were within 0.000791 N of 9.81 N;
+airborne readings were zero. The first attempt failed during import because
+PATH omitted the existing Ninja executable; both logs are retained.
+
+Outputs `report.json` and `trace.npz` retain source/config hashes, all 60 steps
+and explicit acceptance checks. This validates simple-scene readout under the
+original 8-position-iteration setting; it does not validate force magnitudes
+in the full hand/object scene or its separate 32-iteration diagnostic.
