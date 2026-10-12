@@ -13,11 +13,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--split', choices=['test_set_seen_cat', 'test_set_unseen_cat'], required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--cfg-env', type=Path, help='Checkpoint environment config; default is released stage 3')
     parser.add_argument('--audit-env-ids', type=int, nargs='+', help='Record these original split-entry indices at every control step')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source, pairs = split_pairs(root, args.split)
-    base = root / 'dex4d_policy/dex4d/cfg/xarm6_leap_hand_ap2ap_stage_3.yaml'
+    base = args.cfg_env.resolve() if args.cfg_env else root / 'dex4d_policy/dex4d/cfg/xarm6_leap_hand_ap2ap_stage_3.yaml'
     config = yaml.safe_load(base.read_text())
     config['env']['evaluation_object_pairs'] = [[code, scale] for code, scale in pairs]
     config['env']['numEnvs'] = len(pairs)
@@ -33,8 +34,9 @@ def main():
                 'unique_meshes': len({code for code, _ in pairs}),
                 'unique_pairs': len(set(pairs)), 'pairs': pairs,
                 'split_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                'base_config': str(base),
                 'base_config_sha256': hashlib.sha256(base.read_bytes()).hexdigest(),
-                'protocol': 'One environment per original split entry, including every scale and repeated entry; original stage3 task and two-rollout test metrics.'}
+                'protocol': 'One environment per original split entry, including every scale and repeated entry; selected environment recipe and original two-rollout test metrics.'}
     (args.output / 'requested_cases.json').write_text(json.dumps(manifest, indent=2) + '\n')
     print(json.dumps({k: v for k, v in manifest.items() if k != 'pairs'}, indent=2))
 

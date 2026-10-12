@@ -475,3 +475,33 @@ convergence, full-scale throughput or physical-quality acceptance.
 
 Training startup also now archives the selected environment/train/object-list
 configs instead of attempting to copy missing hardcoded author files.
+
+## Evaluate an actual training checkpoint
+
+Use the environment and network/training configs saved with that run. The split
+preparer defaults to released stage 3; explicitly select the saved environment
+for stage-1/2 or other checkpoints. The runner requires the custom checkpoint
+and its training config together. Original no-override commands still select
+the released stage-3 model and config.
+
+```bash
+.venv-gym/bin/python reproduction/prepare_split_eval.py --split test_set_unseen_cat --cfg-env TRAIN_RUN/env.yaml --output NEW_EVAL
+.venv-gym/bin/python reproduction/run_split_eval.py --output NEW_EVAL --gpu 0 --max-seconds 420 --checkpoint TRAIN_RUN/model_3_final.pt --cfg-train TRAIN_RUN/train.yaml
+.venv-gym/bin/python reproduction/verify_trained_teacher_eval.py --training-run TRAIN_RUN --evaluation NEW_EVAL
+```
+
+Here `TRAIN_RUN` is the completed native three-iteration recovery fixture; for
+a later run use its actual final model filename. `--audit-env-ids 0 1 42 49 58`
+on preparation additionally records those five original unseen entries.
+The verifier requires weights equal to `training_state_latest.pt`, config parity
+apart from explicit test cases/count/audit, correct native checkpoint iteration,
+and actual ordered coverage. The study's `summarize_split_eval.py` independently
+verifies official split provenance and metric aggregation.
+
+`evaluation_protocol.json` records effective control decimation, curriculum
+parameters and parsed checkpoint iteration after the original test setup.
+Native testing still disables DR and random initial episode time. This metadata
+is read-only; the author's initial reset/curriculum order is preserved. A
+stage-1/2 checkpoint (30 Hz, early curriculum) must not be compared directly
+against released stage 3 (5 Hz, later curriculum) as a learning-performance
+comparison. The small three-iteration fixture validates the pipeline only.

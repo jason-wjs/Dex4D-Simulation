@@ -16,10 +16,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True, help='Directory from prepare_split_eval.py')
     parser.add_argument('--gpu', type=int, required=True)
     parser.add_argument('--max-seconds', type=int, default=1200)
+    parser.add_argument('--checkpoint', type=Path, help='Actual trained model_N*.pt; requires --cfg-train')
+    parser.add_argument('--cfg-train', type=Path, help='Network/training config belonging to --checkpoint')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--initial-state-probe', action='store_true', help='Record reset and three policy steps instead of full evaluation')
     modes.add_argument('--action-replay', action='store_true', help='Use the finite open-loop diagnostic specified by action_replay.json')
     args = parser.parse_args()
+    assert (args.checkpoint is None) == (args.cfg_train is None), 'Supply checkpoint and its training config together'
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
     requested = json.loads((output / 'requested_cases.json').read_text())
@@ -31,13 +34,15 @@ def main():
         return {int(line.strip()) for line in text.splitlines() if line.strip()}
 
     assert not gpu_pids(), 'Selected GPU is occupied'
-    checkpoint = root / 'dex4d_policy/dex4d/example_models/teacher_policy_stage_3/model_34000_best.pt'
+    checkpoint = args.checkpoint.resolve() if args.checkpoint else root / 'dex4d_policy/dex4d/example_models/teacher_policy_stage_3/model_34000_best.pt'
+    train_config = args.cfg_train.resolve() if args.cfg_train else root / 'dex4d_policy/dex4d/cfg/ppo/config_stage_3.yaml'
     shutil.copy2(checkpoint, output / checkpoint.name)
+    shutil.copy2(train_config, output / 'train.yaml')
     command = [sys.executable, 'train.py', '--task', 'XArm6LeapHandAP2AP', '--algo', 'ppo',
                '--seed', '0', '--rl_device', 'cuda:0', '--sim_device', 'cuda:0', '--test', '--headless',
                '--num_envs', str(requested['entries']), '--vis_env_id', '0',
                '--model_dir', str(output / checkpoint.name), '--cfg_env', str(output / 'env.yaml'),
-               '--cfg_train', 'cfg/ppo/config_stage_3.yaml']
+               '--cfg_train', str(output / 'train.yaml')]
     if args.initial_state_probe:
         command[1] = str(root / 'reproduction/check_initial_state.py')
     elif args.action_replay:
@@ -52,8 +57,9 @@ def main():
                 'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
                 'source_patch': subprocess.check_output(['git', 'diff'], cwd=root, text=True),
                 'gpu_identity': subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-gpu=name,uuid', '--format=csv,noheader'], text=True).strip(),
-                'hashes': {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in
-                           [checkpoint, output / 'env.yaml', Path(__file__).resolve(), root / 'dex4d_policy/dex4d/cfg/ppo/config_stage_3.yaml']}}
+                'checkpoint_source': str(checkpoint), 'train_config_source': str(train_config),
+                'hashes': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
+                           [checkpoint, output / checkpoint.name, output / 'env.yaml', Path(__file__).resolve(), train_config, output / 'train.yaml']}}
     manifest_path = output / 'run_manifest.json'
     with manifest_path.open('x') as f:
         json.dump(manifest, f, indent=2)

@@ -216,6 +216,18 @@ class PPO:
         if self.is_testing:
             self.vec_env.task.iteration = self.current_learning_iteration
             self.vec_env.task.update_curriculum()
+            task = self.vec_env.task
+            protocol = {'checkpoint_iteration': self.current_learning_iteration,
+                        'num_envs': task.num_envs, 'episode_length': task.max_episode_length,
+                        'simulation_dt': task.sim_params.dt, 'substeps': task.sim_params.substeps,
+                        'control_frequency_inv': task.cfg['env'].get('controlFrequencyInv', 1),
+                        'curriculum': task.curriculum, 'randomize': task.randomize,
+                        'random_time': task.random_time,
+                        'too_far_reset_threshold': task.too_far_reset_threshold,
+                        'goal_reset_stable_ratio': task.goal_reset_stable_ratio,
+                        'robot_dof_speed_scale': task.robot_dof_speed_scale}
+            with open(osp.join(osp.dirname(self.model_dir), 'evaluation_protocol.json'), 'w') as stream:
+                json.dump(protocol, stream, indent=2, allow_nan=False)
             fps = round(
                 1 / (self.vec_env.task.sim_params.dt * self.vec_env.task.cfg["env"].get("controlFrequencyInv", 1))
             )
