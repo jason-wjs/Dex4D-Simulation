@@ -579,6 +579,10 @@ class XArm6LeapHandAP2AP(BaseTask):
         # compute aggregate size. NOTE: for larger set of training objects, increase the max_agg_bodies and max_agg_shapes (x50 or more)
         max_agg_bodies = self.num_robot_bodies * 1 + 50 * self.num_object_bodies + 1  ##
         max_agg_shapes = self.num_robot_shapes * 1 + 50 * self.num_object_shapes + 1  ##
+        # Preview 4 GPU aggregate bitmap clears (n+31)//8 bytes but allocates
+        # 4*((n+31)//32). Capacity == 1 mod 32 makes those sizes agree.
+        # Increase capacity only; preserve every actor, shape and collision rule.
+        max_agg_shapes = ((max_agg_shapes + 30) // 32) * 32 + 1
 
         self.robots = []
         self.envs = []

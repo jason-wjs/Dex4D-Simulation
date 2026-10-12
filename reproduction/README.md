@@ -83,12 +83,72 @@ The first headless teacher attempts revealed two separate failures:
   an empty image. This branch skips PPO recording and teacher table-texture
   operations when the existing `graphics_device_id` is negative. It does not
   change action, reward, observation, reset or success calculations.
-- An intermittent `free(): invalid pointer` abort occurs in the native
+- An intermittent `free(): invalid pointer` abort was observed in the native
   `gym.create_actor` call for the robot. One run passed scene creation and loaded
   the checkpoint; other attempts aborted before policy execution. The graphics
   fix does **not** establish that this allocation problem is fixed. Native
-  debugging is ongoing; do not count these attempts as completed evaluations.
+  debugging subsequently located the aggregate allocation mismatch documented
+  below. Those failed attempts do not count as completed evaluations.
 
 The actual diagnostic uses the original stage3 config/checkpoint, seed 0, four
 training-list objects and the original two 400-step test rollouts. Four objects
 are a setup fixture, not a benchmark. Preserve the unmodified original metrics.
+
+## Preview 4 GPU aggregate allocation repair
+
+A minimal scene with the original robot reproduces the native abort without
+PyTorch, PPO, object meshes or checkpoints. Removing force sensors did not fix it.
+Valgrind located a host heap write past a 24-byte allocation in
+`physx::PxgAABBManager::createAggregate`, called from `gym.begin_aggregate`.
+The later `create_actor`/`create_env` aborts were detection sites.
+
+Inspection of the pinned Preview 4 `libPhysXGpu_64.so` routine at `0x6f2da–0x6f356`
+shows bitmap allocation `4 * ((n + 31) >> 5)` bytes, but initialization
+`(n + 31) >> 3` bytes. For shape capacity 179 this allocates 24 and clears 26 bytes.
+Rounding to a multiple of 32 is **not** a fix: 256 allocates 32 and clears 35,
+even if allocator padding happens to hide the crash. A capacity congruent to
+1 modulo 32 makes both lengths agree. We increase the original shape capacity to
+`((n + 30) // 32) * 32 + 1` (179 becomes 193: 28 bytes for both operations).
+
+This alters reserved capacity only. It keeps the original aggregate grouping,
+self-collision flag, robot, all shapes, force sensors, solver and task semantics.
+The vision task inherits this scene creation. No student validation is implied.
+The pinned simulator binary is not modified.
+
+Native regression fixture (outside training; choose an idle GPU first):
+
+```bash
+CUDA_VISIBLE_DEVICES=0 timeout 90 .venv-gym/bin/python \
+  reproduction/check_aggregate_capacity.py --max-shapes 179
+CUDA_VISIBLE_DEVICES=0 timeout 90 .venv-gym/bin/python \
+  reproduction/check_aggregate_capacity.py --max-shapes 193
+```
+
+The first command deliberately exercises the original native failure. Inspect
+memory-checker output, not merely exit status: the original scene can reach exit
+0 under Valgrind while still reporting the concrete invalid write. Detailed
+runtime validation and raw-log locations are maintained in the study repository.
+
+The repaired teacher completed the original two 400-step test rollouts on H100,
+GPU PhysX and GPU tensors, four objects and seed 0: successes 1.0 / 1.0,
+current_successes 1.0 / 1.0, consecutive_successes 3.25 / 3.5 (exit 0).
+These four training-list objects are not an unseen-object benchmark. Replay with:
+
+```bash
+# At repo root, after setting the Gym runtime exports above:
+mkdir -p outputs/teacher-stage3
+cp dex4d_policy/dex4d/example_models/teacher_policy_stage_3/model_34000_best.pt outputs/teacher-stage3/
+model="$PWD/outputs/teacher-stage3/model_34000_best.pt"
+cd dex4d_policy/dex4d
+timeout --kill-after=15s 300 ../../.venv-gym/bin/python train.py \
+  --task XArm6LeapHandAP2AP --algo ppo --seed 0 \
+  --rl_device cuda:0 --sim_device cuda:0 --test --num_envs 4 --headless \
+  --model_dir "$model" --vis_env_id 0 \
+  --cfg_env cfg/xarm6_leap_hand_ap2ap_stage_3.yaml \
+  --cfg_train cfg/ppo/config_stage_3.yaml
+```
+
+Targeted memory regression passed: original capacity 179 reports one aggregate
+invalid-write context; repaired capacity 193 reports none and exits normally.
+Other CPython/CUDA Valgrind reports remain, so this is not a globally clean
+memory-check claim. The rounding leaves already-conforming capacities unchanged.
