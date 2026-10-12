@@ -300,3 +300,27 @@ native Dex4D traces fail this consistency check; force magnitudes must not be
 reported as validated hardware loads. See the study's force/table report for
 the controlled comparison and interpretation limits.
 
+
+## Teacher checkpoint semantics audit
+
+The original PPO `save` writes only `actor_critic.state_dict()`. `load` restores
+those weights and infers the iteration from the filename, while leaving the
+new Adam optimizer empty; `run` resets the environment unconditionally. Treat
+this as weight initialization, including the author's stage-3 launch, not a
+complete simulator/optimizer continuation. No save/load behavior was changed.
+
+`reproduction/check_teacher_checkpoint.py --output NEW_DIRECTORY` checks the
+original full stage-1/2 PointNet teacher and PPO constructor/save/load on CPU.
+Two synthetic differentiable updates populate Adam, then save/new-agent/load
+and an identical next update reveal the missing state. Observed: all weights
+match immediately after load, 25 Adam entries become zero, and next-update
+maximum parameter difference is 0.0005301423. This is an optimizer-state
+diagnostic using synthetic inputs/loss, not a PPO rollout or performance test.
+It creates no simulator; the constructor's `is_testing=True` suppresses W&B
+initialization, while the explicit update/save/load calls are exercised.
+
+For the shipped Python 3.8 environment, expose its standalone Python `lib`
+directory through `LD_LIBRARY_PATH` and import Isaac Gym before torch as the
+script does. Use `CUDA_VISIBLE_DEVICES=''` to keep the check CPU-only.
+Full learner/task/RNG continuation remains a prerequisite for interrupted
+teacher training; do not relabel a stage warm start as such a continuation.
