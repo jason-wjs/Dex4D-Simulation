@@ -376,7 +376,8 @@ class XArm6LeapHandAP2AP(BaseTask):
         asset_root = "../../assets"
         robot_asset_file = "urdf/xarm6_leap_description/xarm6_leap_left_2023.urdf"
         table_texture_files = "../assets/textures/texture_stone_stone_texture_0.jpg"
-        table_texture_handle = self.gym.create_texture_from_file(self.sim, table_texture_files)
+        if self.graphics_device_id >= 0:
+            table_texture_handle = self.gym.create_texture_from_file(self.sim, table_texture_files)
 
         if "asset" in self.cfg["env"]:
             asset_root = self.cfg["env"]["asset"].get("assetRoot", asset_root)
@@ -704,7 +705,8 @@ class XArm6LeapHandAP2AP(BaseTask):
 
             # add table
             table_handle = self.gym.create_actor(env_ptr, table_asset, table_pose, "table", i, -1, self.segmentation_id["table"])
-            self.gym.set_rigid_body_texture(env_ptr, table_handle, 0, gymapi.MESH_VISUAL, table_texture_handle)
+            if self.graphics_device_id >= 0:
+                self.gym.set_rigid_body_texture(env_ptr, table_handle, 0, gymapi.MESH_VISUAL, table_texture_handle)
             table_idx = self.gym.get_actor_index(env_ptr, table_handle, gymapi.DOMAIN_SIM)
             self.table_indices.append(table_idx)
 

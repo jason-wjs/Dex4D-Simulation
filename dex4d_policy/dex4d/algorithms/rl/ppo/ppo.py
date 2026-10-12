@@ -147,11 +147,14 @@ class PPO:
             fps = round(
                 1 / (self.vec_env.task.sim_params.dt * self.vec_env.task.cfg["env"].get("controlFrequencyInv", 1))
             )
-            video_recorder = VideoRecorder(self.vec_env.task, model_dir=self.model_dir, fps=fps, env_id=self.vec_env.task.cfg['vis_env_id'])
+            video_recorder = None
+            if self.vec_env.task.graphics_device_id >= 0:
+                video_recorder = VideoRecorder(self.vec_env.task, model_dir=self.model_dir, fps=fps, env_id=self.vec_env.task.cfg['vis_env_id'])
             metric_writer = MetricWriter(model_dir=self.model_dir)
             N_rollouts = 2
             for i in tqdm(range(self.vec_env.task.max_episode_length * N_rollouts)):
-                video_recorder.record_frame()
+                if video_recorder is not None:
+                    video_recorder.record_frame()
                 with torch.no_grad():
                     if self.apply_reset:
                         current_obs = self.vec_env.reset()
