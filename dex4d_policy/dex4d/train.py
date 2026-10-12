@@ -27,6 +27,10 @@ def train():
             # Record the cases actually instantiated after test-time filtering.
             case_path = Path(args.model_dir).parent / "evaluation_cases.json"
             case_path.write_text(json.dumps(task.object_code_and_scale_str_for_envs, indent=2) + "\n")
+            if 'evaluation_object_pairs' in cfg['env']:
+                expected = [{'object_code': code, 'scale_str': f'{round(scale * 100):03d}'}
+                            for code, scale in cfg['env']['evaluation_object_pairs']]
+                assert task.object_code_and_scale_str_for_envs == expected, 'Instantiated test cases differ from requested pairs'
 
         sarl = eval('process_{}'.format(args.algo))(args, env, cfg_train, logdir)
 

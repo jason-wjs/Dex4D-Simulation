@@ -253,6 +253,16 @@ class XArm6LeapHandAP2AP(BaseTask):
         self.gym.add_ground(self.sim, plane_params)
 
     def _create_object_scale_dict(self):
+        self.evaluation_object_pairs = self.cfg['env'].get('evaluation_object_pairs')
+        if self.evaluation_object_pairs is not None:
+            assert self.cfg['test'], 'Explicit evaluation pairs are test-only'
+            assert len(self.evaluation_object_pairs) == self.num_envs
+            self.object_scale_dict = {}
+            for code, scale in self.evaluation_object_pairs:
+                scales = self.object_scale_dict.setdefault(code, [])
+                if scale not in scales:
+                    scales.append(scale)
+            return
         if "object_code_dict_file" in self.cfg["env"]:
             with open(self.cfg["env"]["object_code_dict_file"], 'r') as f:
                 self.object_scale_dict = yaml.load(f, Loader=MergeLoader)['object_code_dict']
@@ -661,7 +671,11 @@ class XArm6LeapHandAP2AP(BaseTask):
                 self.gym.enable_actor_dof_force_sensors(env_ptr, robot_actor)
 
 
-            id = int(i / self.num_envs * len(self.object_code_list))
+            if self.evaluation_object_pairs is not None:
+                code, requested_scale = self.evaluation_object_pairs[i]
+                id = self.object_code_list.index(code)
+            else:
+                id = int(i / self.num_envs * len(self.object_code_list))
             object_code = self.object_code_list[id]
             available_scale = []
             for scale_id in self.object_scale_id_list[id]:
@@ -670,7 +684,11 @@ class XArm6LeapHandAP2AP(BaseTask):
                     available_scale.append(scale)
                 else:
                     print(f'prior not found: {object_code}/{scale}')
-            scale = available_scale[i % len(available_scale)]
+            if self.evaluation_object_pairs is not None:
+                assert requested_scale in available_scale
+                scale = requested_scale
+            else:
+                scale = available_scale[i % len(available_scale)]
             scale_id = self.scale2id[scale]
             self.object_scale_buf[i] = scale
             self.object_id_buf[i] = id

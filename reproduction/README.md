@@ -167,3 +167,44 @@ environment 29 to object 28. The observed manifest therefore has 50 entries but
 49 unique pairs, including `core/mug-962883677a586bd84a60c1a189046dd1` / `010`
 twice (environments 28 and 29). This branch records that original behavior;
 it does not silently change the mapping or claim complete split coverage.
+
+## Complete held-out split evaluation
+
+The optional test-only `env.evaluation_object_pairs` assigns one ordered
+`[mesh_code, scale]` entry to each environment. It bypasses the original first
+scale filter and floating-point index mapping; omitting it preserves the original
+training and playback path. Every requested scale is loaded, while repeated
+identical entries remain separate environments. `train.py` verifies the actual
+case manifest before loading the policy. The task's reset, goal sampling, reward,
+success conditions, physics and network are unchanged.
+
+The official seen-category list contains 141 entries / 141 unique pairs / 137
+meshes. The unseen-category list contains 100 entries / 78 unique pairs / 43
+meshes. Preserve duplicate YAML keys and repeated entries; a normal YAML mapping
+loader can silently remove cases. This is an explicitly complete-split protocol,
+distinct from the author's default first-50-training-mesh playback.
+
+From the fork root, on an idle GPU with the isolated environment installed:
+
+```bash
+.venv-gym/bin/python reproduction/prepare_split_eval.py \
+  --split test_set_unseen_cat --output outputs/unseen-eval
+.venv-gym/bin/python reproduction/run_split_eval.py \
+  --output outputs/unseen-eval --gpu 0 --max-seconds 1200
+```
+
+Use `test_set_seen_cat` and a separate output directory for the other split.
+The runner uses the original stage3 checkpoint and seed 0, records source/config
+hashes and argv, checks the GPU every ten seconds, and stops only its process
+group on a time limit or foreign GPU process. It verifies exact case order,
+two original metric snapshots and agreement between native means and per-env
+values. An incomplete process is not accepted as a completed evaluation.
+
+Teacher test playback additionally writes `evaluation_rollouts.json` beside the
+checkpoint, retaining the author's three metric names and reporting steps.
+Per-environment arrays correspond to `evaluation_cases.json` order. Read-only
+recording does not change metric computation. The study repository's
+`experiments/dex4d/summarize_split_eval.py` independently checks the original
+split file and reports entry-weighted and unique-pair-weighted results; the latter
+first averages repeated entries of a pair. Neither statistic certifies contact
+quality or replaces the native metric with a grasp-success definition.

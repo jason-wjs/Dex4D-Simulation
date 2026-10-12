@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import os
 import os.path as osp
 from pickle import FALSE
@@ -151,6 +152,7 @@ class PPO:
             if self.vec_env.task.graphics_device_id >= 0:
                 video_recorder = VideoRecorder(self.vec_env.task, model_dir=self.model_dir, fps=fps, env_id=self.vec_env.task.cfg['vis_env_id'])
             metric_writer = MetricWriter(model_dir=self.model_dir)
+            evaluation_rollouts = []
             N_rollouts = 2
             for i in tqdm(range(self.vec_env.task.max_episode_length * N_rollouts)):
                 if video_recorder is not None:
@@ -175,6 +177,14 @@ class PPO:
                         'consecutive_successes': consecutive_successes.item()
                     }
                     metric_writer.write_metrics_txt(metrics_dict)
+                    evaluation_rollouts.append({
+                        **metrics_dict,
+                        'policy_step': i + 1,
+                        'per_environment': {name: getattr(self.vec_env.task, name).detach().cpu().tolist()
+                                            for name in ('successes', 'current_successes', 'consecutive_successes')},
+                    })
+                    with open(osp.join(osp.dirname(self.model_dir), 'evaluation_rollouts.json'), 'w') as stream:
+                        json.dump(evaluation_rollouts, stream, indent=2, allow_nan=False)
                     print(f"Test Rollout {i//self.vec_env.task.max_episode_length}: \nSuccesses: {successes.item()*100:.2f}%, \nCurrent Successes: {current_successes.item()*100:.2f}%, \nConsecutive Successes: {consecutive_successes.item():.4f}")
 
             # save the action trajectory
