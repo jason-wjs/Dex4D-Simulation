@@ -104,6 +104,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-gym/
+.python/
+outputs/
 env/
 venv/
 ENV/
