@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--split', choices=['test_set_seen_cat', 'test_set_unseen_cat'], required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--audit-env-ids', type=int, nargs='+', help='Record these original split-entry indices at every control step')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source, pairs = split_pairs(root, args.split)
@@ -20,6 +21,10 @@ def main():
     config = yaml.safe_load(base.read_text())
     config['env']['evaluation_object_pairs'] = [[code, scale] for code, scale in pairs]
     config['env']['numEnvs'] = len(pairs)
+    if args.audit_env_ids is not None:
+        assert len(set(args.audit_env_ids)) == len(args.audit_env_ids)
+        assert all(0 <= i < len(pairs) for i in args.audit_env_ids)
+        config['env']['trajectory_audit_env_ids'] = args.audit_env_ids
     # The explicit test pairs replace the training-list source for this config.
     del config['env']['object_code_dict_file']
     args.output.mkdir(parents=True, exist_ok=False)

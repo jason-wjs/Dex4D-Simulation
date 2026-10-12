@@ -208,3 +208,33 @@ recording does not change metric computation. The study repository's
 split file and reports entry-weighted and unique-pair-weighted results; the latter
 first averages repeated entries of a pair. Neither statistic certifies contact
 quality or replaces the native metric with a grasp-success definition.
+
+## Control-step physical diagnostics
+
+To record selected environments while keeping the complete unseen-category batch:
+
+```bash
+.venv-gym/bin/python reproduction/prepare_split_eval.py \
+  --split test_set_unseen_cat --audit-env-ids 0 1 42 49 58 \
+  --output outputs/unseen-trajectory-audit
+.venv-gym/bin/python reproduction/run_split_eval.py \
+  --output outputs/unseen-trajectory-audit --gpu 0 --max-seconds 1200
+```
+
+The opt-in test recorder writes `trajectory_audit.npz` and
+`trajectory_audit.json`: original actions/targets, DOF states, rigid-body states,
+object/goal states, reset flags, task distance and native body net contact forces.
+Metadata includes native body/joint names, effective actor DOF properties, limits
+and sampling interval. No action, reset, reward or RNG is changed; collecting
+data adds GPU-to-CPU synchronization. Invocation equivalence must be measured,
+and the first recorded replay did not exactly match the unrecorded baseline.
+
+Samples are taken after each control step (0.2 s in stage3), not every physics
+substep. Net force does not provide contact pairs or penetration depth. The
+study repository supplies offline `audit_table_geometry.py`,
+`audit_joint_geometry.py` and `plot_trajectory_audit.py`. They compare source
+collision vertices against the native table box and corroborate joint states
+using source URDF joint transforms plus recorded parent/child link rotations.
+Source-mesh intersection is distinct from PhysX's cooked collision hulls and
+signed contact separation. A high task score alone is not a physical-quality
+pass. Keep recorded runs separate from unrecorded evaluations.

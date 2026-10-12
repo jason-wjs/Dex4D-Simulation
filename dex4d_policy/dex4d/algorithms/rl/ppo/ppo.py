@@ -153,6 +153,11 @@ class PPO:
                 video_recorder = VideoRecorder(self.vec_env.task, model_dir=self.model_dir, fps=fps, env_id=self.vec_env.task.cfg['vis_env_id'])
             metric_writer = MetricWriter(model_dir=self.model_dir)
             evaluation_rollouts = []
+            audit = None
+            if 'trajectory_audit_env_ids' in self.vec_env.task.cfg['env']:
+                from utils.trajectory_audit import TrajectoryAudit
+                audit = TrajectoryAudit(self.vec_env.task, osp.dirname(self.model_dir),
+                                        self.vec_env.task.cfg['env']['trajectory_audit_env_ids'])
             N_rollouts = 2
             for i in tqdm(range(self.vec_env.task.max_episode_length * N_rollouts)):
                 if video_recorder is not None:
@@ -166,6 +171,8 @@ class PPO:
                     # Step the vec_environment
                     next_obs, rews, dones, infos = self.vec_env.step(actions, id)
                     current_obs.copy_(next_obs)
+                if audit is not None:
+                    audit.capture(i + 1, actions)
                 if i % self.vec_env.task.max_episode_length == self.vec_env.task.max_episode_length - 2:
                     successes = self.vec_env.task.successes.sum() / self.vec_env.num_envs
                     current_successes = self.vec_env.task.current_successes.sum() / self.vec_env.num_envs
@@ -186,6 +193,9 @@ class PPO:
                     with open(osp.join(osp.dirname(self.model_dir), 'evaluation_rollouts.json'), 'w') as stream:
                         json.dump(evaluation_rollouts, stream, indent=2, allow_nan=False)
                     print(f"Test Rollout {i//self.vec_env.task.max_episode_length}: \nSuccesses: {successes.item()*100:.2f}%, \nCurrent Successes: {current_successes.item()*100:.2f}%, \nConsecutive Successes: {consecutive_successes.item():.4f}")
+
+            if audit is not None:
+                audit.save()
 
             # save the action trajectory
             if hasattr(self.vec_env.task, 'action_trajectory'):
