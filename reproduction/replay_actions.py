@@ -68,13 +68,24 @@ def replay(self, num_learning_iterations, log_interval=1):
         task.simulation_step_audit = SimulationStepAudit(task, output, ids)
     source_actions = torch.as_tensor(actions[:steps], device=task.device)
     all_actions = torch.zeros((task.num_envs, task.num_actions), device=task.device)
+    hold_arm = spec.get('hold_arm_targets_for_audit', False)
+    if hold_arm:
+        assert task.num_arm_dofs == 6 and not lower_table
+        assert not spec.get('disable_hand_table_contact_for_audit', False)
+        initial_arm_targets = task.cur_targets[ids, :6].clone()
     for step in range(steps):
         assert not task.reset_buf.any(), 'Unexpected environment reset in open-loop diagnostic'
         task.reset_goal_buf.zero_()  # Fixed goals; no goal resampling in this diagnostic.
         all_actions[ids] = source_actions[step]
+        if hold_arm:
+            # Original arm control integrates action increments; zero removes
+            # commanded arm motion while retaining the recorded finger inputs.
+            all_actions[ids, :6] = 0.
         with torch.no_grad():
             self.vec_env.step(all_actions, step)
         audit.capture(step + 1, all_actions)
+        if hold_arm:
+            assert torch.allclose(task.cur_targets[ids, :6], initial_arm_targets, atol=1e-6, rtol=0)
         if (step + 1) % 60 == 0:
             print(f'REPLAY_STEP {step + 1}/{steps}', flush=True)
     audit.save()
@@ -82,6 +93,7 @@ def replay(self, num_learning_iterations, log_interval=1):
         task.simulation_step_audit.save()
     native = task.gym.get_sim_params(task.sim)
     summary = {'steps': steps, 'env_ids': ids, 'num_envs': task.num_envs,
+               'hold_arm_targets_for_audit': hold_arm,
                'hand_table_contact_disabled': spec.get('disable_hand_table_contact_for_audit', False),
                'table_z_offset_m': -1.0 if lower_table else 0.0,
                'table_actor_indices': task.table_indices.detach().cpu().tolist(),
