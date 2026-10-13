@@ -87,6 +87,7 @@ def replay(self, num_learning_iterations, log_interval=1):
         if hold_arm:
             assert torch.allclose(task.cur_targets[ids, :6], initial_arm_targets, atol=1e-6, rtol=0)
         if (step + 1) % 60 == 0:
+            audit.save()  # Preserve completed prefixes if the finite runner times out.
             print(f'REPLAY_STEP {step + 1}/{steps}', flush=True)
     audit.save()
     if spec.get('simulation_step_audit', False):
