@@ -17,13 +17,17 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--gpu', type=int, required=True)
     parser.add_argument('--source-run', type=Path, help='Reuse a completed two-iteration fixture when debugging restore')
+    parser.add_argument('--full-scale', action='store_true',
+                        help='Keep original 4096 environments and full training object list')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     task_root = root / 'dex4d_policy/dex4d'
     cfg = yaml.safe_load((task_root / 'cfg/xarm6_leap_hand_ap2ap_stage_1_2.yaml').read_text())
-    cfg['env']['numEnvs'], cfg['env']['object_num'] = 16, 4
+    if not args.full_scale:
+        cfg['env']['numEnvs'], cfg['env']['object_num'] = 16, 4
+    wall_limit = 900 if args.full_scale else 420
     train = yaml.safe_load((task_root / 'cfg/ppo/config_stage_1_2.yaml').read_text())
     train['learn']['save_interval'] = 1
     (output / 'env.yaml').write_text(yaml.safe_dump(cfg))
@@ -37,10 +41,16 @@ def main():
                 'source_diff': subprocess.check_output(['git', 'diff'], cwd=root, text=True),
                 'source_hashes': {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sources},
                 'scope': '16 environments, first four filtered training objects, full teacher/PPO and original randomization. Diagnostic logical-frame offset 30000 exercises nonzero DR. Native iterations 2 then separate-process 3. Not convergence, full-scale throughput or bitwise future physics validation.'}
+    manifest.update(num_envs=cfg['env']['numEnvs'], object_limit=cfg['env']['object_num'],
+                    max_seconds_per_process=wall_limit)
+    if args.full_scale:
+        manifest['scope'] = ('Original 4096 environments and complete training list; full teacher/PPO and original randomization. '
+                             'Diagnostic logical-frame offset 30000 exercises nonzero DR. Native iterations 2 then separate-process 3. '
+                             'Full-scale recovery check, not convergence, accepted physical behavior or bitwise future physics validation.')
     def pids():
         return {int(v) for v in subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-compute-apps=pid', '--format=csv,noheader,nounits'], text=True).split()}
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(args.gpu), OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='4',
-               MAX_JOBS='2', WANDB_MODE='disabled', PYTHONUNBUFFERED='1')
+               MAX_JOBS='2', WANDB_MODE='disabled', PYTHONUNBUFFERED='1', VK_LOADER_DRIVERS_DISABLE='*')
     env['PATH'] = str(root / '.venv-gym/bin') + ':' + env['PATH']
     env['LD_LIBRARY_PATH'] = str((root / '.venv-gym/bin/python').resolve().parent.parent / 'lib')
     phases = [('fresh', 2), ('resumed', 3)]
@@ -62,7 +72,7 @@ def main():
                    '--max_iterations', str(limit), '--save_training_state']
         if phase == 'resumed':
             command += ['--training_state', str(checkpoint)]
-        record = {'phase': phase, 'command': command, 'status': 'running', 'max_seconds': 420,
+        record = {'phase': phase, 'command': command, 'status': 'running', 'max_seconds': wall_limit,
                   'gpu': subprocess.check_output(['nvidia-smi', '-i', str(args.gpu), '--query-gpu=index,uuid,name', '--format=csv,noheader'], text=True).strip()}
         manifest['runs'].append(record)
         started = time.monotonic()
@@ -73,7 +83,7 @@ def main():
             print(phase, 'PID', process.pid, flush=True)
             try:
                 while process.poll() is None:
-                    if time.monotonic() - started > 420 or pids() - {process.pid}:
+                    if time.monotonic() - started > wall_limit or pids() - {process.pid}:
                         record['status'] = 'stopped_limit_or_gpu_occupied'
                         break
                     time.sleep(5)

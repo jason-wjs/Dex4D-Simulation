@@ -22,9 +22,11 @@ def main():
     assert all(v <= 1e-6 for v in restore['native_readback'].values())
     assert all(rollout.values())
     a, b = before['learner'], after['learner']
+    num_envs = before['task']['cfg']['env']['numEnvs']
+    transitions = [2 * num_envs * 8, 3 * num_envs * 8]
     assert a['settings'] == b['settings']
     assert [a['next_iteration'], b['next_iteration']] == [2, 3]
-    assert [a['tot_timesteps'], b['tot_timesteps']] == [256, 384]
+    assert [a['tot_timesteps'], b['tot_timesteps']] == transitions
     assert a['rng']['cuda'] is not None and b['rng']['cuda'] is not None
     assert a['optimizer']['state'].keys() == b['optimizer']['state'].keys()
     steps = [[float(v['step']) for v in state['optimizer']['state'].values()] for state in [a, b]]
@@ -41,7 +43,7 @@ def main():
     assert before['task']['cases'] == after['task']['cases']
     noise = {k: float(v['var']) for k, v in before['task']['noise'].items()}
     assert set(noise) == {'observations', 'actions'} and all(v > 0 for v in noise.values())
-    report = {'passed': True, 'iterations': [2, 3], 'transitions': [256, 384],
+    report = {'passed': True, 'iterations': [2, 3], 'transitions': transitions, 'num_envs': num_envs,
               'adam_steps': [[min(v), max(v)] for v in steps], 'max_parameter_delta': delta,
               'model_and_adam_finite': True, 'cuda_rng_present_and_restored_exactly': True,
               'logical_frames': frames, 'control_step_counters': counters,
@@ -49,7 +51,7 @@ def main():
               'adaptive_step_size': [a['step_size'], b['step_size']],
               'checkpoint_sha256': [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths],
               'restore': restore, 'first_rollout': rollout,
-              'scope': '16 native environments, four object entries, full teacher network/PPO; diagnostic DR frame offset 30000. Separate-process continuation, not convergence, full-scale performance or bitwise future physics equality.'}
+              'scope': 'Native teacher network/PPO with environment scale recorded above; diagnostic DR frame offset 30000. Separate-process continuation, not convergence, accepted physical behavior or bitwise future physics equality.'}
     (args.resumed / 'continuation_result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 
