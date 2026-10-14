@@ -38,6 +38,23 @@ def replay(self, num_learning_iterations, log_interval=1):
     if 'disable_hand_table_contact_for_audit' in spec:
         from hand_table_filter import apply
         apply(task, output, spec['disable_hand_table_contact_for_audit'])
+    if spec.get('limit_arm_effort_for_audit', False):
+        assert not spec.get('hold_arm_targets_for_audit', False)
+        assert not spec.get('lower_table_for_audit', False)
+        assert not spec.get('disable_hand_table_contact_for_audit', False)
+        properties = []
+        for instance, robot in zip(task.envs, task.robots):
+            before = task.gym.get_actor_dof_properties(instance, robot)
+            requested = before.copy()
+            requested['effort'][:6] *= .1
+            assert task.gym.set_actor_dof_properties(instance, robot, requested)
+            actual = task.gym.get_actor_dof_properties(instance, robot)
+            assert np.array_equal(actual, requested)
+            properties.append({label: {key: value[key].tolist() for key in value.dtype.names}
+                for label, value in [('before', before), ('after', actual)]})
+        (output / 'arm_effort_properties.json').write_text(json.dumps(dict(
+            scale=.1, environments=properties,
+            scope='Native effort-property readback, not measured drive torque. Only first six joint effort limits change.'), indent=2)+'\n')
 
     # Install a common measured post-reset state into a fresh scene. Simulator
     # contact caches are not serialized; neither condition performs warm-up.
@@ -94,6 +111,7 @@ def replay(self, num_learning_iterations, log_interval=1):
         task.simulation_step_audit.save()
     native = task.gym.get_sim_params(task.sim)
     summary = {'steps': steps, 'env_ids': ids, 'num_envs': task.num_envs,
+               'limit_arm_effort_for_audit': spec.get('limit_arm_effort_for_audit', False),
                'hold_arm_targets_for_audit': hold_arm,
                'hand_table_contact_disabled': spec.get('disable_hand_table_contact_for_audit', False),
                'table_z_offset_m': -1.0 if lower_table else 0.0,
